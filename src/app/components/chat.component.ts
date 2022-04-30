@@ -1,7 +1,7 @@
 import { AfterContentInit, Component, ElementRef, Inject, OnInit, Renderer2, ViewChild, ViewChildren } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import * as R from 'ramda';
-import { AsyncSubject, BehaviorSubject, catchError, concatMap, debounceTime, distinctUntilChanged, EMPTY, filter, from, fromEvent, interval, map, merge, mergeMap, Observable, of, OperatorFunction, pairwise, pluck, ReplaySubject, retry, RetryConfig, scan, Subject, switchMap, take, tap, timer, toArray, withLatestFrom, zip } from 'rxjs';
+import { AsyncSubject, BehaviorSubject, catchError, concatMap, debounceTime, distinctUntilChanged, EMPTY, filter, from, fromEvent, interval, map, merge, mergeMap, Observable, of, OperatorFunction, pairwise, pipe, pluck, ReplaySubject, retry, RetryConfig, scan, Subject, switchMap, take, tap, timer, toArray, withLatestFrom, zip } from 'rxjs';
 import { ajax } from 'rxjs/ajax';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 
@@ -723,18 +723,6 @@ websocket consumes and produces events from type message and typing
   deutsche Bahn functionality end
   */
 
-    function bufferDebounceTime<T>(time: number = 0): OperatorFunction<T, T[]> {
-      return (source: Observable<T>) => {
-        let bufferedValues: T[] = [];
-
-        return source.pipe(
-          tap(value => bufferedValues.push(value)),
-          debounceTime(time),
-          map(() => bufferedValues),
-          tap(() => bufferedValues = []),
-        );
-      };
-    }
     /*
     start gif api
     */
@@ -765,6 +753,65 @@ websocket consumes and produces events from type message and typing
     timer(5000, 5000).subscribe(console.log)
     interval(5000).subscribe(console.log);
 
+    /* start weather
+    */
+
+    const weather$ = ([latitude, longitude]: any) => new Observable(o => {
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,relativehumidity_2m,windspeed_10m`)
+        .then(res => res.json())
+        .then(res => {
+          o.next(res); o.complete()
+        }).catch(err => o.error(err))
+    });
+
+    const coordsFromPc$ = (postalCode: string) => new Observable(o => {
+      fetch(`https://public.opendatasoft.com/api/records/1.0/search/?dataset=georef-germany-postleitzahl&q=${postalCode}&facet=plz_name&facet=lan_name&facet=lan_code`)
+        .then(res => res.json())
+        .then(res => {
+          o.next(res); o.complete()
+        }).catch(err => o.error(err))
+    });
+
+
+    const locationObs$ = new Observable<GeolocationPosition>((o: any) => {
+      navigator.geolocation.getCurrentPosition((location: GeolocationPosition) => { o.next(location); o.complete() },
+        ((err: GeolocationPositionError) => o.error(err)))
+    })
+
+    const resolveLocation: any = {
+      "here": () => {
+        return locationObs$
+          .pipe(
+            map(({ coords: { latitude, longitude } }) => [latitude, longitude]),
+            map(() => ["55.0111", "10.58"]) // remove in production
+          )
+      },
+      getCoords: (postalCode: any) => {
+        // TODO fetch coords
+        return coordsFromPc$(postalCode)
+          .pipe(
+            map(({ records: [{ geometry: { coordinates: [longitude, latitude] } }] }: any) => [latitude, longitude]));
+      }
+    }
+
+    inputObs$
+      .pipe(
+        pluck("target", "value"),
+        map(input => input as string),
+        filter(R.startsWith("@weather")),
+        map(R.trim),
+        distinctUntilChanged(),
+        map(R.compose(R.drop(1), R.filter(R.compose(R.not, R.isEmpty)), R.split(" "))),
+        //tap(console.log),
+        filter((place: any) => R.compose(R.not, R.isNil)(place)),
+        debounceTime(600),
+        switchMap((place) => resolveLocation[place] ? resolveLocation[place]() : resolveLocation["getCoords"](place)),
+        concatMap(weather$)
+      )
+
+      .subscribe(console.log)
+    /* end weather
+*/
   }
   public sendGif(gif: any) {
     console.log(gif)
