@@ -1,0 +1,173 @@
+<div style="text-align: center;">
+    <h1>My Chat</h1>
+    <div [ngStyle]="{'display': (this.user$ | async) ? 'block' : 'none'}">
+        Hello {{(this.user$ | async)?.name}}!
+    </div>
+    <input #nameInput [ngStyle]="{'border-color': (this.userExisting$ | async) ? 'green' : 'red'}">
+    <button style="margin-left: 1em" #authBtn id="login-button" [disabled]="!(this.userExisting$ | async)"
+        class="btn btn-success">Login</button>
+</div>
+<div class="container__chat" style="display:flex">
+    <ul style="list-style-type: none;">
+        <ng-container *ngIf="(this.rooms$ | async) as rooms">
+            <li *ngFor="let room of rooms; let i = index" style="width: 7em; font-size: 1.3em;">
+                <div style="display:flex; align-items: center;">
+                    <div *ngIf="this.unreadMessagesByRoom$ | async as unreadMessages"
+                        style=" color:white; background-color: red;">
+                        {{unreadMessages[i]?.length}}
+                    </div>
+                    <div routerLink="/chat/{{i}}" [routerLinkActive]="'is-active'"
+                        style="flex-basis: 90%; margin: 0.3em; cursor:pointer; width: 7em; padding:0.6em; border-radius: 1em;"
+                        *appDelay="i * 250">
+                        {{room.name}}
+                    </div>
+                </div>
+            </li>
+        </ng-container>
+        <button type="button" class="btn btn-primary" #addRoomBtn>Add Room</button>
+    </ul>
+    <div style="display:flex; flex-direction: column; width: 100%;">
+        <div class="container chat-container">
+            <ul #chat class="chat" *ngIf="(this.messageInCurrentRoom$ | async) as messages">
+                <li *ngFor="let message of messages" #messageElements>
+                    <!-- this is the appended/ upload image-->
+                    <div [ngClass]="message.user === (this.user$ | async).name ? 'msg' : 'someoneElseMsg'">
+                        <span class="author">{{message.user}}</span>
+                        <div class="content">
+                            {{message.message}}
+                        </div>
+                        <div>
+                            <img *ngIf="message.preview_image" src="{{message.preview_image}}">
+                            <p img *ngIf="message.preview_description">
+                                Link Preview
+                                {{message.preview_description}}
+                            </p>
+                        </div>
+                        <div *ngIf="message.bahnConnections">
+                            <ul>
+                                <li *ngFor="let con of message.bahnConnections" style="color:white">
+                                    {{con}}
+                                </li>
+                            </ul>
+                        </div>
+                        <a *ngIf="message.img" href={{message.img}} style="cursor:pointer" appZoom>
+                            <img appZoom style="width:150px; height: auto;  cursor: pointer;" src={{message.img}}></a>
+                        <div style="display:block; height:1em">
+                            <time>{{message.time | date:'h:mm a'}}</time>
+                        </div>
+                    </div>
+                </li>
+                <!-- start fake messages-->
+                <!-- li>
+                    <div style="display:flex">
+                     
+                        <div *ngIf="false">
+                            {{2132138139 | date:'mediumTime'}} <strong>Julius</strong> :
+                            Hello world im Julius
+                        </div>
+                        <div *ngIf="false" style="border: 1px black solid">
+                            Link Preview
+                            <img *ngIf="false" src="Ä">
+                            <p>
+                                Hello world im Julius
+                            </p>
+                        </div>
+                    </div>
+                    <div class="msg message">
+                        <span class="author">Julius</span>
+                        <div class="content">
+                            Hello world, im Julius
+                        </div>
+
+                        <a *ngIf="true" style="cursor:pointer" appZoom>
+                            <img appZoom style="width:150px; height: auto;  cursor: pointer;"
+                                src="http://localhost:3000/img/58c279eb2dbd258a73a654670d9cc92b"
+                                href="http://localhost:3000/img/ff3450a0e6caea24334a5df9e6d6963f"></a>
+                        <div style="display:block; height:1em">
+                            <time>{{213103843104813 | date:'h:mm a'}}</time>
+                        </div>
+                    </div>
+                </li>
+                <li>
+                    <div style="display:flex">
+                        <div *ngIf="false">
+                            {{2132138139 | date:'mediumTime'}} <strong>Julius</strong> :
+                            Hello world im Julius
+                        </div>
+                        <div *ngIf="false" style="border: 1px black solid">
+                            Link Preview
+                            <img *ngIf="false" src="Ä">
+                            <p>
+                                Hello
+                            </p>
+                        </div>
+                    </div>
+                    <div class="msg message">
+                        <span class="author">Julius</span>
+                        <div class="content">
+                            Hello
+                        </div>
+                        <a *ngIf="true" style="cursor:pointer" appZoom>
+                            <img appZoom style="width:150px; height: auto;  cursor: pointer;"
+                                src="http://localhost:3000/img/ff3450a0e6caea24334a5df9e6d6963f"
+                                href="http://localhost:3000/img/ff3450a0e6caea24334a5df9e6d6963f"></a>
+                        <div style="display:block; height:1em">
+                            <time>{{213103843104813 | date:'h:mm a'}}</time>
+                        </div>
+                    </div>
+              end fake messages-->
+                <li *ngIf="(typingStream$ | async) as typing">
+                    <div style="display:flex; flex-direction: column;">
+                        <img style="height: 75px; width: auto;"
+                            src="https://thumbs.gfycat.com/WavyViciousIrishdraughthorse-size_restricted.gif">
+                        <div>{{typing.user}} is typing...
+                        </div>
+                    </div>
+                </li>
+            </ul>
+        </div>
+        <ng-container *ngIf="(this.linkPreview$ | async) as linkPreview">
+            <div style="background-color: lightgrey; display:flex; padding: 0.5em">
+                <img src="{{linkPreview.image}}" style="max-width: 150px; height: auto; align-self: center;">
+                {{linkPreview.description}}
+            </div>
+        </ng-container>
+        <ng-container *ngIf="(this.bahnConnections$ | async) as bahnConnections">
+            <div style="background-color: lightgrey; display:flex; padding: 0.5em">
+                <ul>
+                    <li *ngFor="let con of bahnConnections" style ="text-align: left;">
+                        {{con}}
+                    </li>
+                </ul>
+            </div>
+            <button (click)="this.bahnConnections$.next(undefined)">X</button>
+        </ng-container>
+        <ng-container *ngIf="(this.gifs$ | async) as gifs">
+            <div style="background-color: lightgrey; display:flex; padding: 0.5em">
+                <img *ngFor="let gif of gifs" src={{gif.media[0].gif.preview}} width=100 height=100
+                    style="cursor:pointer" (click)="sendGif(gif)">
+            </div>
+            <button (click)="this.gifs$.next(undefined)">X</button>
+        </ng-container>
+        <input #uploadInput style="width: 100%;cursor: pointer; display: none; z-index: 0;" type="file" id="file"
+            class="form-control" name="uploadFile">
+        <div [ngStyle]="{'display': (imgPreview$ | async) ? 'block' : 'none'}"
+            style="background-color: lightgrey; display:flex; padding: 0.5em">
+            <img src="{{this.imgPreview$ | async}}" style="width:200px; height:auto">
+            <button type="button" class="btn btn-secondary" #removeFileBtn>X</button>
+        </div>
+        <div class="message-bar">
+            <div class="container">
+                <div [ngStyle]="{'display': (this.user$ | async) ? 'block' : 'none'}">
+                    <div #inputGroup>
+                        <input #sendInput id="textinput" class="textarea" type="text" name="chat-input"
+                            style="z-index: 1;">
+                    </div>
+                </div>
+            </div>
+            <button [ngClass]="sendInput.value.length ? '.button' : '.button-invisible'" #sendBtn id="send-button"
+                class="button"
+                style="border-radius: 2em; height: 3em; width: 3em; margin-left: 0.5em;border-width: 0px; ">-></button>
+        </div>
+    </div>
+</div>

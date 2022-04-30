@@ -3,10 +3,16 @@ import { BrowserModule } from '@angular/platform-browser';
 
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
+import { ChatComponent } from './components/chat.component';
+import { DelayDirective } from './directives/delay.directive';
+import { ZoomDirective } from './directives/zoom.directive';
 
 @NgModule({
   declarations: [
-    AppComponent
+    AppComponent,
+    ChatComponent,
+    DelayDirective,
+    ZoomDirective
   ],
   imports: [
     BrowserModule,
