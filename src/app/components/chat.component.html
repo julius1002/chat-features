@@ -32,6 +32,7 @@
                 <li *ngFor="let message of messages" #messageElements>
                     <!-- this is the appended/ upload image-->
                     <div [ngClass]="message.user === (this.user$ | async).name ? 'msg' : 'someoneElseMsg'">
+                        <img style="width:200px; height: 200px" *ngIf="message.gif" src="{{message.gif}}">
                         <span class="author">{{message.user}}</span>
                         <div class="content">
                             {{message.message}}
@@ -135,7 +136,7 @@
         <ng-container *ngIf="(this.bahnConnections$ | async) as bahnConnections">
             <div style="background-color: lightgrey; display:flex; padding: 0.5em">
                 <ul>
-                    <li *ngFor="let con of bahnConnections" style ="text-align: left;">
+                    <li *ngFor="let con of bahnConnections" style="text-align: left;">
                         {{con}}
                     </li>
                 </ul>

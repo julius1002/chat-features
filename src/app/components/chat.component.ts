@@ -1,7 +1,7 @@
 import { AfterContentInit, Component, ElementRef, Inject, OnInit, Renderer2, ViewChild, ViewChildren } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import * as R from 'ramda';
-import { AsyncSubject, BehaviorSubject, catchError, concatMap, debounceTime, distinctUntilChanged, EMPTY, filter, from, fromEvent, interval, map, merge, mergeMap, Observable, of, OperatorFunction, pairwise, pipe, pluck, ReplaySubject, retry, RetryConfig, scan, Subject, switchMap, take, tap, timer, toArray, withLatestFrom, zip } from 'rxjs';
+import { AsyncSubject, BehaviorSubject, catchError, concatMap, debounceTime, distinctUntilChanged, EMPTY, filter, from, fromEvent, interval, map, merge, mergeMap, Observable, of, OperatorFunction, pairwise, pipe, pluck, ReplaySubject, retry, RetryConfig, scan, startWith, Subject, switchMap, take, tap, timer, toArray, withLatestFrom, zip } from 'rxjs';
 import { ajax } from 'rxjs/ajax';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 
@@ -55,6 +55,10 @@ export class ChatComponent implements OnInit, AfterContentInit {
 
   unreadMessagesByRoom$: Subject<any> = new Subject();
 
+  ws$: WebSocketSubject<any> = webSocket(`ws://${this.backendUri.split("//")[1]}/ws`)
+
+  roomId$ = new BehaviorSubject(0);
+
   constructor(private render2: Renderer2,
     private route: ActivatedRoute) { }
 
@@ -65,6 +69,9 @@ export class ChatComponent implements OnInit, AfterContentInit {
   public resolve(obj: any, key: any) {
     return obj ? obj[key] : null;
   }
+
+  public scrollToNewestMessage = () => this.messageElements?.changes.subscribe((res: any) =>
+    this.chat.nativeElement.lastElementChild?.scrollIntoView({ behavior: "smooth" }))
 
   ngOnInit(): void {
 
@@ -135,7 +142,6 @@ export class ChatComponent implements OnInit, AfterContentInit {
     /*
 websocket consumes and produces events from type message and typing
 */
-    const ws$: WebSocketSubject<any> = webSocket(`ws://${this.backendUri.split("//")[1]}/ws`)
 
     ajax(`${this.backendUri}/rooms`)
       .pipe(
@@ -156,22 +162,21 @@ websocket consumes and produces events from type message and typing
       )
       .subscribe(this.rooms$)
 
-    const roomId$: any = this.route.paramMap
+
+    this.route.paramMap
       .pipe(
-        map(({ params: { roomId } }: any) => roomId)) // pluck("params", "roomId") alternative parameter destructuring
+        map(({ params: { roomId } }: any) => roomId))
+      .subscribe(this.roomId$) // pluck("params", "roomId") alternative parameter destructuring
 
-    const scrollToNewestMessage = () => this.messageElements?.changes.subscribe((res: any) =>
-      this.chat.nativeElement.lastElementChild?.scrollIntoView({ behavior: "smooth" }))
+    this.roomId$
+      .subscribe(this.scrollToNewestMessage)
 
-    roomId$
-      .subscribe(scrollToNewestMessage)
-
-    roomId$.pipe(
+    this.roomId$.pipe(
       pairwise(),
       withLatestFrom(this.user$),
       filter(([[unused, _], user]) => Boolean(user)),
       map(([[before, after], { name }]) => { return { type: "room_change", before: before, after: after, user: name } })) // { name } is user object
-      .subscribe(ws$);
+      .subscribe(this.ws$);
 
     //get room id from uri param, default is 1
 
@@ -188,7 +193,7 @@ websocket consumes and produces events from type message and typing
         fromEvent(this.sendBtn?.nativeElement, "click"))
         .pipe(
           filter(() => R.compose(R.not, R.isEmpty)(this.sendInput?.nativeElement.value)),
-          withLatestFrom(this.user$, roomId$, this.imgPreview$, this.bahnConnections$), // img preview, bahnConnections
+          withLatestFrom(this.user$, this.roomId$, this.imgPreview$, this.bahnConnections$), // img preview, bahnConnections
           map(([_, user, roomdId, img, bahnConnections]) => { // append roomId from parameters to message, append img if uploaded
             return {
               "user": user.name,
@@ -203,10 +208,11 @@ websocket consumes and produces events from type message and typing
             this.bahnConnections$.next(undefined)
             this.linkPreview$.next(undefined);
             localStorage.removeItem("savedMessage");
+
           })
         )
 
-    sendBtnObs$.subscribe(ws$)
+    sendBtnObs$.subscribe(this.ws$)
 
     const clearInput = (id: string) => (<HTMLInputElement>window.document.getElementById(id)).value = ""
 
@@ -215,7 +221,7 @@ websocket consumes and produces events from type message and typing
         map(() => undefined))
       .subscribe({
         next: message => {
-          scrollToNewestMessage()
+          this.scrollToNewestMessage()
           this.linkPreview$.next(message)
           this.typingStream$.next(message);
           this.imgPreview$.next(message)
@@ -241,14 +247,15 @@ websocket consumes and produces events from type message and typing
       return (<any>
         {
           "room_change": (message: any) => [{ ...message, message: message.user + " has joined", room: message.after }, { ...message, message: message.user + " has left", room: message.before }],
-          "message": (message: any) => [message]
+          "message": (message: any) => [message],
+          "gif": (message: any) => [message]
         }
       )[message.type](message)
     }
 
     // hot observable ws$ is mulitcasted
-    ws$.pipe(
-      filter((message) => (message.type === "message") || (message.type === "room_change")),
+    this.ws$.pipe(
+      filter(({ type }) => ["room_change", "message", "gif"].includes(type)),
       withLatestFrom(this.typingStream$, this.user$),
       tap(([message, typingMessage, user]) => {
         if (message.user === typingMessage?.user && (typingMessage?.user !== user?.name)) {
@@ -261,7 +268,7 @@ websocket consumes and produces events from type message and typing
       scan((acc: any, item: any) => [...acc, ...item], []))
       .subscribe(this.messages$)
 
-    this.messageInCurrentRoom$ = roomId$.pipe(
+    this.messageInCurrentRoom$ = this.roomId$.pipe(
       switchMap((roomId) => this.messages$.asObservable().pipe(
         withLatestFrom(this.user$),
         map(([messages, user]) => {
@@ -277,8 +284,8 @@ websocket consumes and produces events from type message and typing
 
     /* swichtes for every new typing to a new timer of 1s.
      Returns false if the timer runs through */
-    ws$.pipe(
-      withLatestFrom(this.user$, roomId$),
+    this.ws$.pipe(
+      withLatestFrom(this.user$, this.roomId$),
       filter(([message, user, roomId]) => message.type === "typing" && (user.name !== message.user) && (roomId == message.room)),
       tap(([message, _]) => this.typingStream$.next(message)),
       debounceTime(1000),
@@ -312,9 +319,9 @@ websocket consumes and produces events from type message and typing
         filter((keyboardEvent: any) => keyboardEvent.keyCode !== 13), // we dont want enter to trigger typing events
         pluck("target", "value"),
         tap((value) => localStorage.setItem("savedMessage", value)),
-        withLatestFrom(this.user$, roomId$),
+        withLatestFrom(this.user$, this.roomId$),
         map(([_, user, roomId]) => ({ "type": "typing", "user": user.name, "room": roomId })),
-      ).subscribe(ws$)
+      ).subscribe(this.ws$)
 
     this.showSendButton$ = fromEvent(this.sendInput?.nativeElement, "keyup")
       .pipe(
@@ -393,14 +400,16 @@ websocket consumes and produces events from type message and typing
 
     // unread functionality start
     // we need to scan messages to incrementally add up the readMessages set
-    const readMessages$ = roomId$
+    const readMessages$ = new BehaviorSubject(0);
+
+    this.roomId$
       .pipe(
         withLatestFrom(this.messages$),
         map(([roomId, messages]) => R.filter((message: any) => (message.type === "message")
           && (message.room === roomId), messages)
         ),
         scan((acc: any, cur: any) => R.uniqBy((elem: any) => elem.id, [...acc, ...cur]))
-      )
+      ).subscribe(readMessages$)
 
     this.messages$
       .asObservable()
@@ -410,7 +419,7 @@ websocket consumes and produces events from type message and typing
           const ids = R.map((msg: any) => msg.id, readMessages)
           return R.filter((msg: any) => !ids.includes(msg.id), messages)
         }),
-        withLatestFrom(this.user$, roomId$),
+        withLatestFrom(this.user$, this.roomId$),
         map(([messages, user, roomId]) => R.filter((message: any) => (message.user !== user.name) && (message.room !== roomId), messages)),
         map(R.pipe(
           R.filter((message: any) => (message.type === "message") && (message.read === false)),
@@ -813,8 +822,13 @@ websocket consumes and produces events from type message and typing
     /* end weather
 */
   }
-  public sendGif(gif: any) {
-    console.log(gif)
+
+  public sendGif({ media: [{ mediumgif: { preview } }] }: any) {
+    this.user$
+      .pipe(
+        withLatestFrom(this.roomId$),
+        map(([{ name }, id]: any) => ({ type: "gif", gif: preview, user: name, room: id, message: "" }))).subscribe(this.ws$)
+    this.scrollToNewestMessage()
   }
 
 

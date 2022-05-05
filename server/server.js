@@ -59,7 +59,8 @@ const answerOnMessageType =
 {
     "message": value => { return { ...value, time: Date.now(), id: crypto.randomUUID(), read: false } },
     "room_change": value => { return { ...value, message: "", time: Date.now() } },
-    "typing": value => { return { ...value, time: Date.now() } }
+    "typing": value => { return { ...value, time: Date.now() } },
+    "gif":value => { return { ...value, time: Date.now() } }
 }
 
 app.ws('/ws', function (ws, req) {
