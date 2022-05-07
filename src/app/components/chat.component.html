@@ -39,7 +39,7 @@
                         </div>
                         <div>
                             <img *ngIf="message.preview_image" src="{{message.preview_image}}">
-                            <p img *ngIf="message.preview_description">
+                            <p *ngIf="message.preview_description">
                                 Link Preview
                                 {{message.preview_description}}
                             </p>

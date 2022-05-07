@@ -5,6 +5,17 @@ import { AsyncSubject, BehaviorSubject, catchError, concatMap, debounceTime, dis
 import { ajax } from 'rxjs/ajax';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 
+interface Message {
+  user: string;
+  message: string;
+  type: string;
+  room: string;
+  time: number;
+  id: string;
+  read: false;
+  gif: string
+}
+
 @Component({
   selector: 'app-chat',
   templateUrl: './chat.component.html',
@@ -827,8 +838,9 @@ websocket consumes and produces events from type message and typing
     this.user$
       .pipe(
         withLatestFrom(this.roomId$),
-        map(([{ name }, id]: any) => ({ type: "gif", gif: preview, user: name, room: id, message: "" }))).subscribe(this.ws$)
-    this.scrollToNewestMessage()
+        map(([{ name }, id]: any) => ({ type: "gif", gif: preview, user: name, room: id, message: "" })),
+        tap(() => this.gifs$.next(undefined)))
+      .subscribe(this.ws$)
   }
 
 
