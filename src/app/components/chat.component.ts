@@ -13,7 +13,19 @@ interface Message {
   time: number;
   id: string;
   read: false;
-  gif: string
+  gif: string;
+  preview_image?: string;
+  preview_description?: string;
+  bahn_connections?: any;
+  img?: string;
+  after?: string;
+  before?: string;
+}
+
+interface TypingEvent {
+  type?: string,
+  user?: string,
+  room?: string
 }
 
 @Component({
@@ -40,11 +52,11 @@ export class ChatComponent implements OnInit, AfterContentInit {
   @ViewChildren("messageElements") messageElements: any;
   @ViewChild('chat') chat!: ElementRef;
 
-  messages$ = new ReplaySubject<any>(100);
+  messages$ = new ReplaySubject<Message[]>(100);
 
-  messageInCurrentRoom$: Observable<any> = EMPTY;
+  messageInCurrentRoom$: Observable<Message[]> = EMPTY;
 
-  typingStream$ = new BehaviorSubject<any>(undefined);
+  typingStream$ = new BehaviorSubject<TypingEvent>({});
 
   showSendButton$: Observable<any> = EMPTY;
 
@@ -206,20 +218,19 @@ websocket consumes and produces events from type message and typing
           filter(() => R.compose(R.not, R.isEmpty)(this.sendInput?.nativeElement.value)),
           withLatestFrom(this.user$, this.roomId$, this.imgPreview$, this.bahnConnections$), // img preview, bahnConnections
           map(([_, user, roomdId, img, bahnConnections]) => { // append roomId from parameters to message, append img if uploaded
-            return {
-              "user": user.name,
-              "message": this.sendInput?.nativeElement.value,
-              "type": "message",
-              "room": roomdId,
-              "img": img,
-              "bahnConnections": bahnConnections
-            }
+            return ({
+              user: <string>user.name,
+              message: <string>this.sendInput?.nativeElement.value,
+              type: "message",
+              room: roomdId + "",
+              img: img,
+              bahn_connections: bahnConnections
+            } as Message)
           }),
           tap(() => {
             this.bahnConnections$.next(undefined)
             this.linkPreview$.next(undefined);
             localStorage.removeItem("savedMessage");
-
           })
         )
 
@@ -234,7 +245,7 @@ websocket consumes and produces events from type message and typing
         next: message => {
           this.scrollToNewestMessage()
           this.linkPreview$.next(message)
-          this.typingStream$.next(message);
+          this.typingStream$.next({});
           this.imgPreview$.next(message)
         }
       })
@@ -242,27 +253,29 @@ websocket consumes and produces events from type message and typing
     /* sending messages with button click END */
 
     /* message handling START */
-    const messageHasUrl = (message: any) => R.pipe(R.split(new RegExp(" ")), R.any(isUrl))(message.message)
+    const messageHasUrl = (message: Message) => R.pipe(R.split(new RegExp(" ")), R.any(isUrl))(message.message)
 
-    const linkPreviewFrom$ = (message: any) => messageHasUrl(message)
+    const linkPreviewFrom$ = (message: Message) => messageHasUrl(message)
       ? ajax(`http://api.linkpreview.net/?key=123456&q=${R.find(isUrl)(R.split(new RegExp(" "), message.message))}`)
         .pipe(pluck("response"), map((value: any) => {
           return {
             ...message,
             preview_image: value.image,
             preview_description: value.description
-          }
+          } as Message
         })) : of(message)
 
-    const processMessage: any = (message: any) => {
-      return (<any>
-        {
-          "room_change": (message: any) => [{ ...message, message: message.user + " has joined", room: message.after }, { ...message, message: message.user + " has left", room: message.before }],
-          "message": (message: any) => [message],
-          "gif": (message: any) => [message]
-        }
-      )[message.type](message)
+
+    const procMessage: any = {
+      "room_change": (message: Message) => [{ ...message, message: message.user + " has joined", room: message.after }, { ...message, message: message.user + " has left", room: message.before }],
+      "message": (message: Message) => [message],
+      "gif": (message: Message) => [message]
     }
+
+    const processMessage: (a: Message) => Message[] =
+      (message: Message) => procMessage[message.type](message)
+
+
 
     // hot observable ws$ is mulitcasted
     this.ws$.pipe(
@@ -270,22 +283,22 @@ websocket consumes and produces events from type message and typing
       withLatestFrom(this.typingStream$, this.user$),
       tap(([message, typingMessage, user]) => {
         if (message.user === typingMessage?.user && (typingMessage?.user !== user?.name)) {
-          this.typingStream$.next(undefined);
+          this.typingStream$.next({});
         }
       }),
-      map(value => value[0]),
+      map(([fst]) => fst),
       concatMap(linkPreviewFrom$),
       map(processMessage),
-      scan((acc: any, item: any) => [...acc, ...item], []))
+      scan((acc: Message[], item: Message[]) => [...acc, ...item], []))
       .subscribe(this.messages$)
 
     this.messageInCurrentRoom$ = this.roomId$.pipe(
       switchMap((roomId) => this.messages$.asObservable().pipe(
         withLatestFrom(this.user$),
         map(([messages, user]) => {
-          return messages.filter((message: any) => (message.room === roomId)).filter((message: any) => (((message.type === "room_change") && !(message.user === user.name)) || (!(message.type === "room_change"))))
+          return messages.filter((message: Message) => (message.room == "" + roomId)).filter((message: Message) => (((message.type === "room_change") && !(message.user === user.name)) || (!(message.type === "room_change"))))
         }),
-        map(messages => { return messages.map((message: any) => { return message.type === "room_change" ? { ...message, user: "" } : message }) })
+        map(messages => { return messages.map((message: Message) => { return message.type === "room_change" ? { ...message, user: "" } : message }) })
       ))
     )
 
@@ -300,7 +313,7 @@ websocket consumes and produces events from type message and typing
       filter(([message, user, roomId]) => message.type === "typing" && (user.name !== message.user) && (roomId == message.room)),
       tap(([message, _]) => this.typingStream$.next(message)),
       debounceTime(1000),
-      map(() => undefined))
+      map(() => ({})))
       .subscribe(this.typingStream$)
 
     // link preview
@@ -411,30 +424,31 @@ websocket consumes and produces events from type message and typing
 
     // unread functionality start
     // we need to scan messages to incrementally add up the readMessages set
-    const readMessages$ = new BehaviorSubject(0);
+    const readMessages$ = new BehaviorSubject<Message[]>([]);
 
     this.roomId$
       .pipe(
         withLatestFrom(this.messages$),
-        map(([roomId, messages]) => R.filter((message: any) => (message.type === "message")
-          && (message.room === roomId), messages)
+        map(([roomId, messages]) => R.filter((message: Message) => (message.type === "message")
+          && (message.room === "" + roomId), messages)
         ),
-        scan((acc: any, cur: any) => R.uniqBy((elem: any) => elem.id, [...acc, ...cur]))
+        scan((acc: Message[], cur: Message[]) => R.uniqBy((elem: Message) => elem.id, [...acc, ...cur]))
       ).subscribe(readMessages$)
+
 
     this.messages$
       .asObservable()
       .pipe(
         withLatestFrom(readMessages$),
         map(([messages, readMessages]: any) => {
-          const ids = R.map((msg: any) => msg.id, readMessages)
-          return R.filter((msg: any) => !ids.includes(msg.id), messages)
+          const ids = R.map((msg: Message) => msg.id, readMessages)
+          return R.filter((msg: Message) => !ids.includes(msg.id), messages)
         }),
         withLatestFrom(this.user$, this.roomId$),
-        map(([messages, user, roomId]) => R.filter((message: any) => (message.user !== user.name) && (message.room !== roomId), messages)),
+        map(([messages, user, roomId]) => R.filter((message: Message) => (message.user !== user.name) && (message.room !== roomId + ""), messages)),
         map(R.pipe(
-          R.filter((message: any) => (message.type === "message") && (message.read === false)),
-          R.groupBy((elem: any) => elem.room))
+          R.filter((message: Message) => (message.type === "message") && (message.read === false)),
+          R.groupBy((elem: Message) => elem.room))
         )
       ).subscribe(this.unreadMessagesByRoom$)
 
@@ -483,198 +497,6 @@ websocket consumes and produces events from type message and typing
     });
 
 
-    const locations = [
-      {
-        "name": "Braunschweig Hbf",
-        "lon": 10.540293,
-        "lat": 52.252218,
-        "id": 8000049
-      },
-      {
-        "name": "Schweich(DB)",
-        "lon": 6.740337,
-        "lat": 49.831064,
-        "id": 8005476
-      },
-      {
-        "name": "Schwerin Hbf",
-        "lon": 11.407455,
-        "lat": 53.634741,
-        "id": 8010324
-      },
-      {
-        "name": "Traunstein",
-        "lon": 12.638797,
-        "lat": 47.869725,
-        "id": 8000116
-      },
-      {
-        "name": "Schwerte(Ruhr)",
-        "lon": 7.558957,
-        "lat": 51.442281,
-        "id": 8000037
-      },
-      {
-        "name": "Wien Schwechat Flugh",
-        "lon": 16.563074,
-        "lat": 48.120902,
-        "id": 8100353
-      }
-    ]
-
-    const arrivals = [
-      {
-        "name": "ICE 372",
-        "type": "ICE",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T13:59",
-        "origin": "Interlaken Ost",
-        "track": "7",
-        "detailsId": "53484%2F22387%2F969450%2F466897%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "IC 2039",
-        "type": "IC",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T14:08",
-        "origin": "Norddeich Mole",
-        "track": "7",
-        "detailsId": "388089%2F130739%2F948410%2F344842%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "IC 2440",
-        "type": "IC",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T14:48",
-        "origin": "Dresden Hbf",
-        "track": "6",
-        "detailsId": "762018%2F255939%2F513538%2F2763%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "ICE 797",
-        "type": "ICE",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T14:57",
-        "origin": "Berlin Ostbahnhof",
-        "track": "6",
-        "detailsId": "373083%2F127745%2F546854%2F149066%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "ICE 798",
-        "type": "ICE",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T15:00",
-        "origin": "Frankfurt&#x0028;M&#x0029; Flughafen Fernbf",
-        "track": "7",
-        "detailsId": "482634%2F164264%2F963980%2F321112%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "IC 2049",
-        "type": "IC",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T15:08",
-        "origin": "Köln Hbf",
-        "track": "7",
-        "detailsId": "382776%2F128998%2F646790%2F195803%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "IC 2036",
-        "type": "IC",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T15:48",
-        "origin": "Leipzig Hbf",
-        "track": "6",
-        "detailsId": "315051%2F106387%2F328776%2F59371%2F80%3fstation_evaId%3D8000049"
-      }
-    ]
-
-    const departures = [
-      {
-        "name": "ICE 797",
-        "type": "ICE",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T14:59",
-        "track": "6",
-        "detailsId": "906081%2F305411%2F962166%2F179056%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "ICE 798",
-        "type": "ICE",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T15:02",
-        "track": "7",
-        "detailsId": "239298%2F83152%2F235114%2F37791%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "IC 2049",
-        "type": "IC",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T15:10",
-        "track": "7",
-        "detailsId": "186351%2F63523%2F532212%2F203989%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "IC 2036",
-        "type": "IC",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T15:49",
-        "track": "6",
-        "detailsId": "373092%2F125734%2F721608%2F236440%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "ICE 375",
-        "type": "ICE",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T15:57",
-        "track": "6",
-        "detailsId": "473238%2F159891%2F419538%2F52023%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "ICE 370",
-        "type": "ICE",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T16:01",
-        "track": "7",
-        "detailsId": "109116%2F38507%2F12488%2F30128%2F80%3fstation_evaId%3D8000049"
-      },
-      {
-        "name": "IC 2431",
-        "type": "IC",
-        "boardId": 8000049,
-        "stopId": 8000049,
-        "stopName": "Braunschweig Hbf",
-        "dateTime": "2022-04-28T16:10",
-        "track": "7",
-        "detailsId": "407358%2F137695%2F396480%2F62454%2F80%3fstation_evaId%3D8000049"
-      }]
-
-
     const now = () => new Date(new Date().getTime() + (3_600_000 * 2)).toISOString()
     const arrivalOrDeparture$: any = {
       "Ankunft": (id: any) => (date: any) => arrivals$(id)(date),
@@ -691,15 +513,12 @@ websocket consumes and produces events from type message and typing
         map(R.trim),
         distinctUntilChanged(),
         map(R.compose(R.drop(1), R.filter(R.compose(R.not, R.isEmpty)), R.split(" "))),
-        filter(([first, second]: any) => R.compose(R.not, R.isNil)(second) && R.length(second) > 3 && R.has(first)(arrivalOrDeparture$)),
+        map(value => value as string[]),
+        filter(([first, second]: string[]) => R.compose(R.not, R.isNil)(second) && R.length(second) > 3 && R.has(first)(arrivalOrDeparture$)),
         debounceTime(500),
-        switchMap(([type, stationName]: any) =>
+        switchMap(([type, stationName]: string[]) =>
           locations$(stationName).pipe(
-            retry(withRetryConfig),
-            catchError(_ => {
-              console.log("error replacing with mock");
-              return of(locations)
-            }))
+            retry(withRetryConfig))
             .pipe(
               map(value => value as any[]),
               map(R.filter(({ name }: any) => R.startsWith(stationName)(name))),
@@ -708,8 +527,6 @@ websocket consumes and produces events from type message and typing
               switchMap(([{ id }, _]) => arrivalOrDeparture$[type](id)(now())
                 .pipe(
                   retry(withRetryConfig),
-                  catchError(_ => { console.log("error replacing with mock"); return type === "Abfahrt" ? of(arrivals) : of(departures) }),
-                  map(value => value as any[]),
                   map(R.take(5)),
                   map(R.map(({ detailsId, ...arrivalOrDeparture }) => ({ ...arrivalOrDeparture, detailsId: encodeURIComponent(detailsId) }))),
                   mergeMap((values: any) => from(values)),
@@ -730,7 +547,6 @@ websocket consumes and produces events from type message and typing
               ))
         ),
         map(value => value as any[]),
-        tap(console.log),
         filter(R.compose(R.not, R.isEmpty)),
         map(R.compose(R.map(([intermediateStopTrack, stop, departure, arrival]) => `${stop.timeShown} ${stop.train} von ${departure.stopName} nach ${arrival.stopName} Gleis ${intermediateStopTrack}`)))
       )
@@ -740,8 +556,8 @@ websocket consumes and produces events from type message and typing
     use inner switchmaps, if you want to access the content of e.g. parameters such as type or stationname, closure-like
     */
     /*
-  deutsche Bahn functionality end
-  */
+    deutsche Bahn functionality end
+    */
 
     /*
     start gif api
@@ -838,7 +654,7 @@ websocket consumes and produces events from type message and typing
     this.user$
       .pipe(
         withLatestFrom(this.roomId$),
-        map(([{ name }, id]: any) => ({ type: "gif", gif: preview, user: name, room: id, message: "" })),
+        map(([{ name }, id]: any) => ({ type: "gif", gif: preview, user: name, room: id, message: "" } as Message)),
         tap(() => this.gifs$.next(undefined)))
       .subscribe(this.ws$)
   }

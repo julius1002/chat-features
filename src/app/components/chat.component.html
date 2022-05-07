@@ -44,9 +44,9 @@
                                 {{message.preview_description}}
                             </p>
                         </div>
-                        <div *ngIf="message.bahnConnections">
+                        <div *ngIf="message.bahn_connections">
                             <ul>
-                                <li *ngFor="let con of message.bahnConnections" style="color:white">
+                                <li *ngFor="let con of message.bahn_connections" style="color:white">
                                     {{con}}
                                 </li>
                             </ul>
@@ -118,7 +118,7 @@
                     </div>
               end fake messages-->
                 <li *ngIf="(typingStream$ | async) as typing">
-                    <div style="display:flex; flex-direction: column;">
+                    <div style="display:flex; flex-direction: column;" *ngIf="typing.type === 'typing'">
                         <img style="height: 75px; width: auto;"
                             src="https://thumbs.gfycat.com/WavyViciousIrishdraughthorse-size_restricted.gif">
                         <div>{{typing.user}} is typing...
