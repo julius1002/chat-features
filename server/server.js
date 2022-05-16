@@ -36,7 +36,7 @@ db
 */
 const users = ["Julius", 'Bill', "Dave"];
 
-var rooms = [{ name: "AllTalk" }, { name: "Gaming" }, { name: "Studying" }, { name: "Relaxing" }]
+const rooms = [{ name: "AllTalk" }, { name: "Gaming" }, { name: "Studying" }, { name: "Relaxing" }]
 
 /*const intervalledAnswer = new Rx.Subject()
 intervalledAnswer.pipe(
@@ -54,13 +54,14 @@ intervalledAnswer.pipe(
 /*
  chat socket
 */
-
+// functional mixin
 const answerOnMessageType =
 {
-    "message": value => { return { ...value, time: Date.now(), id: crypto.randomUUID(), read: false } },
+    "message": value => { return { ...value, time: Date.now(), id: crypto.randomUUID() } },
     "room_change": value => { return { ...value, message: "", time: Date.now() } },
     "typing": value => { return { ...value, time: Date.now() } },
-    "gif":value => { return { ...value, time: Date.now() } }
+    "gif": value => { return { ...value, time: Date.now() } },
+    "reaction": value => { return { ...value } }
 }
 
 app.ws('/ws', function (ws, req) {
@@ -88,7 +89,6 @@ function sendRandomMessage() {
         user: randFromArr(users),
         type: 'message',
         time: Date.now(),
-        read: false,
         id: crypto.randomUUID()
     }))
 }
@@ -98,21 +98,23 @@ Rx.interval(5_000).subscribe(() => sendRandomMessage())
 /*
  upload
 */
+JSON.parse
 
-app.post('/upload', upload.single('file'), function (req, res) {
-    res.json({ location: `http://localhost:3000/img/${req.file.filename}` });
+app.post('/message_with_media', upload.array('file', 10), function ({ body: { message }, files }, res) {
+    R.pipe(
+        fromJSONStr,
+        //(message) => Object.assign(message, { img: R.map(file => `http://localhost:3000/img/${file.filename}`)(files) }), // sets the images to the message object!, alternative to next line
+        (message) => ({ ...message, img: R.map(file => `http://localhost:3000/img/${file.filename}`)(files), time: Date.now() }),
+        toJSONStr,
+        sendToEachClient
+    )(message)
+    return res.status(200).send()
 });
 
 /*
 rooms
 */
-
 app.get("/rooms", (req, res, next) => res.json(rooms))
-
-app.post("/rooms", (req, res, next) => {
-    rooms = [...rooms, req.body]
-    return res.json([...rooms, req.body]);
-})
 
 /*
 user management

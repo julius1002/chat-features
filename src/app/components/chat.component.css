@@ -37,13 +37,6 @@ input.textarea {
   display: block;
 }
 
-.button-inivisible {
-  width: 95%;
-  border-radius: 21px;
-  color: #003f57;
-  display: none
-}
-
 .highlights,
 input.textarea {
   font-family: Arial, Helvetica, sans-serif;
@@ -75,12 +68,11 @@ input.textarea {
 
 .container__chat {
   position: relative;
-  width: 80%;
+  width: 50%;
   margin: 2em auto;
   text-align: center;
   height: auto;
   margin-top: 5px;
-  ;
 }
 
 .chat li {
