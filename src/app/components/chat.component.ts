@@ -92,12 +92,6 @@ export class ChatComponent implements OnInit, AfterContentInit {
 
   ngOnInit(): void {
 
-    fromEvent(document, "click")
-      .pipe(pluck("target"),
-        filter(({ classList }: any) => R.not(R.includes("someoneElseMsg", classList) || R.includes("content", classList) || R.includes("author", classList))),
-        map(() => -1),
-      ).subscribe(this.reactionsIndex$)
-
     /* Declarations 
     */
     const onTypingToInput$ = fromEvent(this.nameInput?.nativeElement, "keyup")
@@ -298,7 +292,8 @@ websocket consumes and produces events from type message and typing
       "room_change": (message: Message) => [{ ...message, message: message.user + " has joined", room: message.after }, { ...message, message: message.user + " has left", room: message.before }],
       "message": (message: Message) => [message],
       "gif": (message: Message) => [message],
-      "reaction": (message: Message) => [message]
+      "reaction": (message: Message) => [message],
+      "delete": (message: Message) => [message]
     }
 
     const processMessage: (a: Message) => Message[] =
@@ -306,7 +301,7 @@ websocket consumes and produces events from type message and typing
 
     // hot observable ws$ is mulitcasted
     this.ws$.pipe(
-      filter(({ type }) => ["room_change", "message", "gif", "reaction"].includes(type)),
+      filter(({ type }) => ["room_change", "message", "gif", "reaction", "delete"].includes(type)),
       withLatestFrom(this.typingStream$, this.user$),
       tap(([message, typingMessage, user]) => {
         if (message.user === typingMessage?.user && (typingMessage?.user !== user?.name)) {
@@ -317,12 +312,10 @@ websocket consumes and produces events from type message and typing
       concatMap(linkPreviewFrom$),
       map(processMessage),
       scan((accumulatedMessages: Message[], [fst]: Message[]) => {
-
-        console.log()
-        return fst.type === "reaction" ? R.map((message: Message) => {
-
-          return message.id === fst.messageId ? ({ ...message, reaction: fst.reaction }) : message;
-        })(accumulatedMessages) : [...accumulatedMessages, fst];
+        
+        return fst.type === "reaction"
+          ? R.map((message: Message) => message.id === fst.messageId ? ({ ...message, reaction: fst.reaction }) : message)(accumulatedMessages) : fst.type === "delete" ?
+            R.map((message: Message) => message.id === fst.messageId ? ({ ...message, message: "deleted Message" }) : message)(accumulatedMessages) : [...accumulatedMessages, fst];
       }, []))
       .subscribe(this.messages$)
 
@@ -616,6 +609,7 @@ websocket consumes and produces events from type message and typing
       here: () => {
         return locationObs$
           .pipe(
+            tap(console.log),
             map(({ coords: { latitude, longitude } }) => [latitude, longitude]),
             map(() => ["55.0111", "10.58"]) // remove in production
           )
@@ -692,14 +686,33 @@ websocket consumes and produces events from type message and typing
   }
 
   react = ([smiley, id]: any) => {
+    this.reactionsIndex$.next(-1)
     this.ws$.next({ type: "reaction", messageId: id, reaction: smiley, message: "" })
     //this.ws$.next({})
   }
   smileys: any = {
-    1: "https://images.vexels.com/media/users/3/134792/isolated/lists/11021ac040438214430837e55f4225b7-3d-laecheln-emoticon-emoji.png",
-    2: "https://images.vexels.com/media/users/3/134534/isolated/preview/ff412bda84291044bf56d7ef069705e5-emoji-cooler-emoticon.png",
-    3: "https://images.vexels.com/media/users/3/146887/isolated/lists/41faeb4b7129b75f4883d75c72627835-feuer-flamme-clipart.png",
+    1: "https://images.vexels.com/media/users/3/258317/isolated/preview/0661ab5da53aa9b0cf459d949bacd6c0-thumbs-up-cut-out.png?w=1800&fmt=webp",
+    2: "https://images.vexels.com/media/users/3/134792/isolated/lists/11021ac040438214430837e55f4225b7-3d-laecheln-emoticon-emoji.png",
+    3: "https://images.vexels.com/media/users/3/134534/isolated/preview/ff412bda84291044bf56d7ef069705e5-emoji-cooler-emoticon.png",
+    4: "https://images.vexels.com/media/users/3/146887/isolated/lists/41faeb4b7129b75f4883d75c72627835-feuer-flamme-clipart.png"
+  }
 
+  draggedMessage$ = new BehaviorSubject(undefined);
+
+  dragged = (id: any) => {
+    this.draggedMessage$.next(id)
+
+  }
+  dragend = () => {
+    this.draggedMessage$.next(undefined)
+  }
+
+  drop = () => {
+    this.draggedMessage$.pipe(take(1)).subscribe(value => this.ws$.next({ type: "delete", messageId: value, message: "" }))
+  }
+
+  dragOver = (event: any) => {
+    event.preventDefault();
   }
 
   Object = Object

@@ -61,7 +61,8 @@ const answerOnMessageType =
     "room_change": value => { return { ...value, message: "", time: Date.now() } },
     "typing": value => { return { ...value, time: Date.now() } },
     "gif": value => { return { ...value, time: Date.now() } },
-    "reaction": value => { return { ...value } }
+    "reaction": value => { return { ...value } },
+    "delete": value => { return { ...value } }
 }
 
 app.ws('/ws', function (ws, req) {
