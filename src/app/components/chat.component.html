@@ -1,7 +1,22 @@
 <div style="text-align: center;">
     <h1>My Chat</h1>
-    <div [ngStyle]="{'display': (this.user$ | async) ? 'block' : 'none'}">
+    <div [ngStyle]="{'display': (this.user$ | async) ? 'block' : 'none'}"
+        style="position: relative; width:500px; margin: 0 auto">
         Hello {{(this.user$ | async)?.name}}!
+        <input #searchInput placeholder="Search for message">
+        <ng-container *ngIf="this.searchResults$ | async as searchResults">
+            <ng-container *ngIf="searchResults.length>0">
+                <ul style="position: absolute; list-style-type: none; z-index: 100; background-color: #d8d8d8; cursor: pointer; top: 0.3em; padding-left: 0em; border-radius: 0.5em; padding: 0em 1em; left: 13em"
+                    id="searchResults">
+                    <ng-container *ngFor="let result of searchResults">
+                        <li *ngIf="result.time | date as time" routerLink="/chat/{{result.room}}"
+                            style="text-align: left; margin-top: 0.5em" class="search-result"
+                            [innerHTML]="time + ' ' + result.user + ' : ' + this.replaceSearchKey(searchInput.value, result.message)">
+                        </li>
+                    </ng-container>
+                </ul>
+            </ng-container>
+        </ng-container>
     </div>
     <input #nameInput [ngStyle]="{'border-color': (this.userExists$ | async) ? 'green' : 'red'}">
     <button style="margin-left: 1em" #authBtn id="login-button" [disabled]="!(this.userExists$ | async)"
@@ -39,13 +54,6 @@
                             {{message.preview_description}}
                         </p>
                     </div>
-                    <div *ngIf="message.bahn_connections">
-                        <ul>
-                            <li *ngFor="let con of message.bahn_connections" style="color:white">
-                                {{con}}
-                            </li>
-                        </ul>
-                    </div>
                     <ng-container *ngIf="message.img">
                         <div style="display: flex;">
                             <div *ngFor="let img of message.img">
@@ -56,9 +64,17 @@
                     </ng-container>
                     <div [ngClass]="message.user === (this.user$ | async).name ? 'msg' : 'someoneElseMsg'"
                         (dragstart)="dragged(message.id)" draggable="true" (dragend)="dragend()"
-                        (mouseenter)="this.reactionsIndex$.next(i)" (mouseleave)="this.reactionsIndex$.next(-1)">
+                        (mouseenter)="!message.reaction ? this.reactionsIndex$.next(i) :{}"
+                        (mouseleave)="!message.reaction ? this.reactionsIndex$.next(-1) :{}">
                         <img style="width:200px; height: 200px" *ngIf="message.gif" src="{{message.gif}}">
                         <span class="author">{{message.user}}</span>
+                        <div *ngIf="message.bahn_connections">
+                            <ul>
+                                <li *ngFor="let con of message.bahn_connections" style="color:white">
+                                    {{con}}
+                                </li>
+                            </ul>
+                        </div>
                         <div class="content">
                             {{message.message}}
                         </div>
@@ -209,8 +225,9 @@
         </div>
     </div>
     <div *ngIf="this.draggedMessage$ | async" (drop)="drop()" style="width:100px; height: 100px"
-        (dragover)="dragOver($event)">
-        <img style ="width: 50px; height: auto;"
-            src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/OOjs_UI_icon_trash.svg/1200px-OOjs_UI_icon_trash.svg.png">
+        (dragover)="dragOver($event)" (dragleave)="dragLeave($event)" id="trash-div">
+        <img style="max-width:100%;
+        max-height:100%;
+        " src="https://findicons.com/files/icons/1580/devine_icons_part_2/256/trash_recyclebin_empty_closed.png">
     </div>
 </div>

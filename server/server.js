@@ -38,7 +38,8 @@ const users = ["Julius", 'Bill', "Dave"];
 
 const rooms = [{ name: "AllTalk" }, { name: "Gaming" }, { name: "Studying" }, { name: "Relaxing" }]
 
-/*const intervalledAnswer = new Rx.Subject()
+const intervalledAnswer = new Rx.Subject()
+
 intervalledAnswer.pipe(
     Rx.switchMap((value) => Rx.concat(
         Rx.interval(500)
@@ -49,7 +50,7 @@ intervalledAnswer.pipe(
                 Rx.repeat(5))
     )),
     Rx.tap(console.log)
-).subscribe(sendToEachClient)*/
+).subscribe(sendToEachClient)
 
 /*
  chat socket
@@ -68,6 +69,7 @@ const answerOnMessageType =
 app.ws('/ws', function (ws, req) {
     Rx.fromEvent(ws, "message")
         .pipe(
+            Rx.tap(console.log), // rm
             Rx.pluck("data"),
             Rx.map(fromJSONStr),
             Rx.tap(console.log),
@@ -84,6 +86,7 @@ function randFromArr(arr) {
 }
 
 function sendRandomMessage() {
+    console.log("sending msg")
     sendToEachClient(toJSONStr({
         room: rooms.indexOf(randFromArr(rooms)) + "",
         message: loremIpsum.loremIpsum(),
@@ -99,7 +102,6 @@ Rx.interval(5_000).subscribe(() => sendRandomMessage())
 /*
  upload
 */
-JSON.parse
 
 app.post('/message_with_media', upload.array('file', 10), function ({ body: { message }, files }, res) {
     R.pipe(

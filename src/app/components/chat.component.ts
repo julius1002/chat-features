@@ -2,7 +2,7 @@ import { AfterContentInit, AfterViewInit, Component, ElementRef, Inject, OnInit,
 import { DomSanitizer } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import * as R from 'ramda';
-import { AsyncSubject, BehaviorSubject, catchError, concatMap, debounceTime, distinctUntilChanged, EMPTY, exhaustMap, filter, from, fromEvent, interval, map, merge, mergeMap, MonoTypeOperatorFunction, Observable, of, OperatorFunction, pairwise, pipe, pluck, ReplaySubject, retry, RetryConfig, scan, startWith, Subject, switchMap, take, tap, timer, toArray, withLatestFrom, zip } from 'rxjs';
+import { AsyncSubject, BehaviorSubject, catchError, combineLatest, concatMap, debounceTime, distinctUntilChanged, EMPTY, exhaustMap, filter, from, fromEvent, interval, map, merge, mergeMap, mergeWith, MonoTypeOperatorFunction, Observable, of, OperatorFunction, pairwise, pipe, pluck, ReplaySubject, retry, RetryConfig, scan, startWith, Subject, switchMap, take, takeUntil, tap, timer, toArray, withLatestFrom, zip } from 'rxjs';
 import { ajax } from 'rxjs/ajax';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 
@@ -36,6 +36,8 @@ interface TypingEvent {
   styleUrls: ['./chat.component.css']
 })
 export class ChatComponent implements OnInit, AfterContentInit {
+
+  @ViewChild('searchInput', { static: true }) searchInput: ElementRef | undefined;
 
   @ViewChild('sendBtn', { static: true }) sendBtn: ElementRef | undefined;
   @ViewChild('sendInput', { static: true }) sendInput: ElementRef | undefined;
@@ -88,9 +90,12 @@ export class ChatComponent implements OnInit, AfterContentInit {
 
   currentRoomId$: Observable<any> = EMPTY;
 
+  searchResults$: Observable<any> = EMPTY;
+
   constructor(private render2: Renderer2, private route: ActivatedRoute, private sanitizer: DomSanitizer) { }
 
   ngOnInit(): void {
+
 
     /* Declarations 
     */
@@ -99,7 +104,32 @@ export class ChatComponent implements OnInit, AfterContentInit {
     const onAuthButtonClick$ = fromEvent(this.authBtn?.nativeElement, "click")
     const onInputToSend$ = fromEvent(this.sendInput?.nativeElement, "keyup")
     const onSendButtonClicked$ = fromEvent(this.sendBtn?.nativeElement, "click")
+    const onSearchTyped$ = fromEvent(this.searchInput?.nativeElement, "keyup")
+    const clickedAnyWhere$ = fromEvent(document, "click")
 
+    /*____________________________________________________________________ SEARCH INPUT ____________________________________________________________________ */
+
+
+
+    // modify with scan, to append on the fly added message on bottom of search results and click outside of search field
+
+    this.searchResults$ =
+      combineLatest([
+        merge(onSearchTyped$
+          .pipe(
+            pluck("target", "value")),
+          clickedAnyWhere$.pipe(map(() => ""))
+        ), this.messages$])
+        .pipe(
+          map(([input, messages]: any) =>
+            input.length < 1 ? [] :
+              R.compose(
+                R.sortBy((msg: any) => msg.time),
+                R.map(({ message, user, time, room }: Message) => ({ message, user, room, time })),
+                R.filter(({ message, type }: Message) => message.includes(input) && type === "message")
+              )(messages)
+          )
+        )
 
     /* asyncsubject emits a single value to all new subscribers,
      perfect fit for logged in user to avoid redundant requests*/
@@ -243,7 +273,6 @@ websocket consumes and produces events from type message and typing
 
     const clearInput = (id: string) => (<HTMLInputElement>window.document.getElementById(id)).value = ""
 
-
     const trace: (a: string) => OperatorFunction<any, any>
       = (prefix: string) => (source$: Observable<any>) => {
         source$.pipe(
@@ -311,11 +340,10 @@ websocket consumes and produces events from type message and typing
       map(([fst]) => fst),
       concatMap(linkPreviewFrom$),
       map(processMessage),
-      scan((accumulatedMessages: Message[], [fst]: Message[]) => {
-        
-        return fst.type === "reaction"
-          ? R.map((message: Message) => message.id === fst.messageId ? ({ ...message, reaction: fst.reaction }) : message)(accumulatedMessages) : fst.type === "delete" ?
-            R.map((message: Message) => message.id === fst.messageId ? ({ ...message, message: "deleted Message" }) : message)(accumulatedMessages) : [...accumulatedMessages, fst];
+      scan((accumulatedMessages: Message[], [{ type, messageId, reaction, ...msg }]: Message[]) => {
+        return type === "reaction"
+          ? R.map((message: Message) => message.id === messageId ? ({ ...message, reaction: reaction }) : message)(accumulatedMessages) : type === "delete" ?
+            R.map(({ reaction, ...message }: Message) => message.id === messageId ? ({ ...message, message: "deleted Message" }) : message)(accumulatedMessages) : [...accumulatedMessages, { type, messageId, reaction, ...msg }];
       }, []))
       .subscribe(this.messages$)
 
@@ -690,6 +718,7 @@ websocket consumes and produces events from type message and typing
     this.ws$.next({ type: "reaction", messageId: id, reaction: smiley, message: "" })
     //this.ws$.next({})
   }
+
   smileys: any = {
     1: "https://images.vexels.com/media/users/3/258317/isolated/preview/0661ab5da53aa9b0cf459d949bacd6c0-thumbs-up-cut-out.png?w=1800&fmt=webp",
     2: "https://images.vexels.com/media/users/3/134792/isolated/lists/11021ac040438214430837e55f4225b7-3d-laecheln-emoticon-emoji.png",
@@ -701,6 +730,8 @@ websocket consumes and produces events from type message and typing
 
   dragged = (id: any) => {
     this.draggedMessage$.next(id)
+    this.reactionsIndex$.next(-1)
+
 
   }
   dragend = () => {
@@ -708,11 +739,32 @@ websocket consumes and produces events from type message and typing
   }
 
   drop = () => {
-    this.draggedMessage$.pipe(take(1)).subscribe(value => this.ws$.next({ type: "delete", messageId: value, message: "" }))
+    this.draggedMessage$.pipe(
+      take(1),
+      filter(() => confirm("Do you want to delete this message?")))
+      .subscribe(value => this.ws$.next({ type: "delete", messageId: value, message: "" }))
   }
 
   dragOver = (event: any) => {
     event.preventDefault();
+    const trashDiv = document.getElementById("trash-div")!
+    trashDiv.setAttribute("style",
+      trashDiv.style + "; width:200px")
+    trashDiv.children[0].setAttribute("src",
+      "https://cdn-icons-png.flaticon.com/512/49/49854.png?w=360")
+  }
+
+  dragLeave = (event: any) => {
+    const trashDiv = document.getElementById("trash-div")!
+
+    trashDiv.setAttribute("style",
+      trashDiv.style + "; width:100px")
+    trashDiv.children[0].setAttribute("src",
+      "https://findicons.com/files/icons/1580/devine_icons_part_2/256/trash_recyclebin_empty_closed.png")
+  }
+
+  replaceSearchKey(searchValue: string, str: any) {
+    return str.replaceAll(searchValue, `<mark>${searchValue}</mark>`)
   }
 
   Object = Object
